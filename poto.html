@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timestamp Kamera & Peta Otomatis (Layout Final)</title>
+    
+    <!-- CSS & JS untuk Peta Interaktif (Leaflet) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- Library untuk mengambil screenshot elemen web -->
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        h2 { text-align: center; color: #444; }
+        .input-group { margin-bottom: 15px; display: flex; flex-direction: column; }
+        .input-group label { margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+        input[type="text"], input[type="file"], select { padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; background-color: #fff; }
+        
+        /* Slider Style */
+        input[type="range"] {
+            width: 100%;
+            margin-top: 5px;
+            cursor: pointer;
+        }
+        .slider-value {
+            color: #007bff;
+            font-weight: bold;
+        }
+
+        /* Checkbox Toggle Style */
+        .toggle-group {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .toggle-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+        .toggle-group label {
+            margin-bottom: 0;
+            cursor: pointer;
+        }
+
+        /* Map persegi di dalam container agar mudah di-screenshot */
+        #map-container {
+            width: 250px; 
+            height: 250px;
+            margin: 0 auto 15px auto;
+            position: relative;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        #map { width: 100%; height: 100%; z-index: 1;}
+
+        /* Efek Filter CSS untuk Dark Map Otomatis di Layar */
+        .dark-mode-map .leaflet-tile-pane {
+            filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3);
+        }
+        
+        /* Styling tombol GPS custom di dalam map */
+        .custom-locate-btn {
+            background-color: white;
+            width: 34px;
+            height: 34px;
+            border: 2px solid rgba(0,0,0,0.2);
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.65);
+        }
+        .custom-locate-btn:hover { background-color: #f4f4f4; }
+        .custom-locate-btn svg { width: 18px; height: 18px; fill: none; stroke: #333; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+        .btn-group { display: flex; gap: 10px; margin-top: 20px; }
+        button.action-btn { padding: 12px; font-size: 16px; font-weight: bold; color: white; border: none; border-radius: 4px; cursor: pointer; transition: 0.3s;}
+        .btn-primary { background-color: #007bff; flex: 1;}
+        .btn-primary:hover { background-color: #0056b3; }
+        .btn-success { background-color: #28a745; flex: 1; display: none; }
+        .btn-success:hover { background-color: #218838; }
+
+        canvas { max-width: 100%; height: auto; border: 1px solid #ddd; margin-top: 20px; border-radius: 4px; }
+        .loading { font-size: 12px; color: #d9534f; display: none; font-weight: bold; margin-bottom:10px; text-align: center;}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Timestamp Foto </h2>
+    
+    <div class="input-group">
+        <label>1. Upload Foto Anda:</label>
+        <input type="file" id="mainPhoto" accept="image/*">
+    </div>
+
+    <div class="input-group">
+        <label>2. Pilih Lokasi (Peta Persegi):</label>
+        <span class="loading" id="loadingText">Mengambil data lokasi...</span>
+        <div id="map-container" class="dark-mode-map">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <!-- PILIHAN MODE PETA -->
+    <div class="input-group">
+        <label for="mapStyleSelect">Pilih Mode Peta:</label>
+        <select id="mapStyleSelect" onchange="changeMapStyle()">
+            <option value="standard">Google Maps Standard (Dengan Label Tempat)</option>
+            <option value="hybrid">Google Maps Hybrid (Satelit + Label)</option>
+            <option value="dark" selected>Dark Map (Gelap)</option>
+        </select>
+    </div>
+
+    <!-- TOMBOL UNTUK MENGAKTIFKAN/MEMATIKAN PETA -->
+    <div class="toggle-group">
+        <input type="checkbox" id="toggleMap" checked>
+        <label for="toggleMap">Tampilkan gambar peta di hasil foto</label>
+    </div>
+
+    <!-- PENGATUR UKURAN TEKS & PETA -->
+    <div class="input-group">
+        <label>Ukuran Teks: <span class="slider-value" id="textScaleLabel">1x (Normal)</span></label>
+        <input type="range" id="textScale" min="0.1" max="3" step="0.1" value="1" oninput="updateLabels()">
+    </div>
+
+    <div class="input-group" id="mapSizeGroup">
+        <label>Ukuran Peta: <span class="slider-value" id="mapScaleLabel">1x (Normal)</span></label>
+        <input type="range" id="mapScale" min="0.1" max="2.5" step="0.1" value="1" oninput="updateLabels()">
+    </div>
+
+    <div class="input-group">
+        <label>Waktu & Tanggal:</label>
+        <input type="text" id="dateTime">
+    </div>
+
+    <div class="input-group">
+        <label>Titik Koordinat:</label>
+        <input type="text" id="coordinates">
+    </div>
+
+    <div class="input-group">
+        <label>Kabupaten / Kota:</label>
+        <input type="text" id="city">
+    </div>
+
+    <div class="input-group">
+        <label>Provinsi:</label>
+        <input type="text" id="province">
+    </div>
+
+    <div class="btn-group">
+        <button class="action-btn btn-primary" onclick="generateImage()">Proses Gambar</button>
+        <button class="action-btn btn-success" id="downloadBtn" onclick="downloadImage()">Download Hasil</button>
+    </div>
+
+    <canvas id="canvas"></canvas>
+</div>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let mainImg = new Image();
+    const loadingText = document.getElementById('loadingText');
+    const mapContainer = document.getElementById('map-container');
+    
+    // Set Waktu Saat Ini
+    const now = new Date();
+    const options = { day: '2-digit', month: 'short', year: 'numeric' };
+    const dateStr = now.toLocaleDateString('id-ID', options);
+    const timeStr = now.toLocaleTimeString('id-ID').replace(/:/g, '.');
+    document.getElementById('dateTime').value = `${dateStr} at ${timeStr}`;
+
+    // Update label saat slider digeser
+    function updateLabels() {
+        const textVal = document.getElementById('textScale').value;
+        const mapVal = document.getElementById('mapScale').value;
+        document.getElementById('textScaleLabel').innerText = textVal + 'x' + (textVal === "1" ? " (Normal)" : "");
+        document.getElementById('mapScaleLabel').innerText = mapVal + 'x' + (mapVal === "1" ? " (Normal)" : "");
+    }
+
+    // Sembunyikan slider peta jika peta dimatikan
+    document.getElementById('toggleMap').addEventListener('change', function() {
+        const mapSizeGroup = document.getElementById('mapSizeGroup');
+        if (this.checked) {
+            mapSizeGroup.style.display = 'flex';
+        } else {
+            mapSizeGroup.style.display = 'none';
+        }
+    });
+
+    // Load Foto Utama
+    document.getElementById('mainPhoto').addEventListener('change', function(e) {
+        const reader = new FileReader();
+        reader.onload = function(event) { mainImg.src = event.target.result; }
+        if(e.target.files[0]) reader.readAsDataURL(e.target.files[0]);
+    });
+
+    // Inisialisasi Peta
+    let map = L.map('map').setView([-7.6298, 111.5239], 15);
+    
+    // Default menggunakan Standard, nanti diatur oleh fungsi changeMapStyle
+    let currentTileLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+        attribution: '&copy; Google Maps',
+        maxZoom: 20,
+        crossOrigin: true
+    }).addTo(map);
+
+    // Fungsi Mengganti Style Peta
+    function changeMapStyle() {
+        const selectedStyle = document.getElementById('mapStyleSelect').value;
+        
+        if (currentTileLayer) {
+            map.removeLayer(currentTileLayer);
+        }
+
+        if (selectedStyle === 'standard') {
+            currentTileLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                attribution: '&copy; Google Maps', maxZoom: 20, crossOrigin: true
+            }).addTo(map);
+            mapContainer.classList.remove('dark-mode-map');
+        } else if (selectedStyle === 'hybrid') {
+            currentTileLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                attribution: '&copy; Google Maps', maxZoom: 20, crossOrigin: true
+            }).addTo(map);
+            mapContainer.classList.remove('dark-mode-map');
+        } else if (selectedStyle === 'dark') {
+            // Menggunakan layer standard untuk di-filter menjadi gelap
+            currentTileLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                attribution: '&copy; Google Maps', maxZoom: 20, crossOrigin: true
+            }).addTo(map);
+            mapContainer.classList.add('dark-mode-map');
+        }
+    }
+
+    let marker = L.marker([-7.6298, 111.5239], {draggable: true}).addTo(map);
+
+    L.Control.LocationButton = L.Control.extend({
+        onAdd: function(map) {
+            let btn = L.DomUtil.create('div', 'custom-locate-btn leaflet-bar leaflet-control');
+            btn.title = "Cari Lokasi Saya";
+            btn.innerHTML = `
+                <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:#333;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;">
+                    <circle cx="12" cy="12" r="3" fill="#333"></circle>
+                    <circle cx="12" cy="12" r="8"></circle>
+                    <line x1="12" y1="1" x2="12" y2="4"></line>
+                    <line x1="12" y1="20" x2="12" y2="23"></line>
+                    <line x1="1" y1="12" x2="4" y2="12"></line>
+                    <line x1="20" y1="12" x2="23" y2="12"></line>
+                </svg>
+            `;
+            
+            btn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                getLocation();
+            };
+            return btn;
+        }
+    });
+
+    new L.Control.LocationButton({ position: 'bottomright' }).addTo(map);
+
+    function getLocation() {
+        if (navigator.geolocation) {
+            loadingText.style.display = 'block';
+            loadingText.innerText = "Mencari sinyal GPS...";
+            
+            navigator.geolocation.getCurrentPosition(function(position) {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                
+                map.setView([lat, lng], 16); 
+                marker.setLatLng([lat, lng]);
+                updateLocationData(lat, lng);
+            }, function(error) {
+                loadingText.style.display = 'none';
+                alert("Gagal mendapatkan lokasi. Pastikan izin akses lokasi aktif.");
+            }, { enableHighAccuracy: true });
+        } else {
+            alert("Browser tidak mendukung GPS.");
+        }
+    }
+
+    function updateLocationData(lat, lng) {
+        document.getElementById('coordinates').value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        loadingText.style.display = 'block';
+        loadingText.innerText = "Mengambil nama jalan & kota...";
+
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`)
+            .then(response => response.json())
+            .then(data => {
+                const addr = data.address;
+                const city = addr.city || addr.town || addr.county || addr.village || '';
+                const province = addr.state || addr.region || '';
+                
+                document.getElementById('city').value = city;
+                document.getElementById('province').value = province;
+                loadingText.style.display = 'none';
+            })
+            .catch(error => {
+                loadingText.style.display = 'none';
+            });
+    }
+
+    map.on('click', function(e) {
+        marker.setLatLng(e.latlng);
+        updateLocationData(e.latlng.lat, e.latlng.lng);
+    });
+
+    marker.on('dragend', function(e) {
+        const position = marker.getLatLng();
+        updateLocationData(position.lat, position.lng);
+    });
+
+    updateLocationData(-7.6298, 111.5239);
+
+    // ==========================================
+    // PROSES RENDERING GAMBAR KUALITAS TINGGI
+    // ==========================================
+    async function generateImage() {
+        if (!mainImg.src) {
+            alert("Harap upload foto utama terlebih dahulu!");
+            return;
+        }
+
+        // Menggunakan resolusi murni asli tanpa penurunan ukuran sama sekali
+        canvas.width = mainImg.naturalWidth || mainImg.width;
+        canvas.height = mainImg.naturalHeight || mainImg.height;
+        ctx.drawImage(mainImg, 0, 0, canvas.width, canvas.height);
+
+        const dateTime = document.getElementById('dateTime').value;
+        const coordinates = document.getElementById('coordinates').value;
+        const city = document.getElementById('city').value;
+        const province = document.getElementById('province').value;
+        
+        const isMapEnabled = document.getElementById('toggleMap').checked;
+        const textScale = parseFloat(document.getElementById('textScale').value);
+        const mapScale = parseFloat(document.getElementById('mapScale').value);
+        const selectedStyle = document.getElementById('mapStyleSelect').value;
+
+        // --- Styling Teks HD ---
+        const fontSize = Math.max(canvas.width * 0.03 * textScale, 16);
+        ctx.font = `${fontSize}px Arial, sans-serif`;
+        ctx.fillStyle = 'white';
+        
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+
+        const marginX = canvas.width * 0.03;
+        const lineHeight = fontSize * 1.3;
+
+        // --- Langkah 1: Tulis Waktu & Lokasi (Di Kiri Atas) ---
+        let textY = canvas.height * 0.05 + fontSize;
+        if(dateTime) { ctx.fillText(dateTime, marginX, textY); textY += lineHeight; }
+        if(coordinates) { ctx.fillText(coordinates, marginX, textY); textY += lineHeight; }
+        if(city) { ctx.fillText(city, marginX, textY); textY += lineHeight; }
+        if(province) { ctx.fillText(province, marginX, textY); }
+
+        // --- Langkah 2: Ambil Peta Persegi JIKA TOMBOL AKTIF ---
+        if (isMapEnabled) {
+            ctx.shadowColor = 'transparent'; 
+
+            let mapWidthOnCanvas, mapHeightOnCanvas, mapY;
+            
+            try {
+                const mapControls = document.querySelector('.leaflet-control-container');
+                if(mapControls) mapControls.style.display = 'none';
+
+                const mapElement = document.getElementById('map-container'); 
+                
+                // Render peta dengan scale 3 agar hasilnya sangat tajam
+                const mapCanvas = await html2canvas(mapElement, {
+                    useCORS: true,
+                    allowTaint: true,
+                    logging: false,
+                    scale: 3, 
+                    width: 250, 
+                    height: 250 
+                });
+
+                if(mapControls) mapControls.style.display = 'block';
+
+                mapWidthOnCanvas = (canvas.width * 0.25) * mapScale;
+                mapHeightOnCanvas = mapWidthOnCanvas; 
+
+                const mapMargin = canvas.width * 0.02;
+                const mapX = mapMargin;
+                mapY = canvas.height - mapHeightOnCanvas - mapMargin;
+
+                // JIKA MODE DARK AKTIF, TERAPKAN FILTER WARNA GELAP LANGSUNG PADA HASIL GAMBAR PETA DI KANVAS UTAMA
+                if (selectedStyle === 'dark') {
+                    ctx.save();
+                    ctx.filter = 'brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3)';
+                    ctx.drawImage(mapCanvas, mapX, mapY, mapWidthOnCanvas, mapHeightOnCanvas);
+                    ctx.restore();
+                } else {
+                    ctx.drawImage(mapCanvas, mapX, mapY, mapWidthOnCanvas, mapHeightOnCanvas);
+                }
+
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        document.getElementById('downloadBtn').style.display = 'block';
+    }
+
+    function downloadImage() {
+        const link = document.createElement('a');
+        link.download = 'foto timestamp.png';
+        link.href = canvas.toDataURL('image/png', 1.0);
+        link.click();
+    }
+</script>
+
+</body>
+</html>
